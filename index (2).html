@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Password Cracker - Single Threaded & Enhanced</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+            color: #333;
+            direction: ltr;
+            text-align: left;
+        }
+        h1, h2 {
+            color: #0056b3;
+            text-align: center;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .controls, .results {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        input[type="file"],
+        input[type="number"],
+        select {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            text-align: left;
+        }
+        fieldset {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        legend {
+            font-weight: bold;
+            color: #0056b3;
+            padding: 0 10px;
+        }
+        input[type="checkbox"] {
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        input[type="checkbox"] + label {
+            display: inline-block;
+            font-weight: normal;
+            margin-bottom: 5px;
+            vertical-align: middle;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .results p {
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        #foundPassword {
+            font-weight: bold;
+            color: red;
+        }
+        #logDetails {
+            background-color: #eee;
+            border: 1px solid #ddd;
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            text-align: left;
+            direction: ltr;
+            font-size: 0.9em;
+        }
+        .log-error { color: red; font-weight: bold; }
+        .log-warn { color: orange; }
+        .log-info { color: #333; }
+
+        /* Loader Styles */
+        #loader {
+            text-align: center;
+            font-size: 1.2em;
+            color: #007bff;
+            padding: 20px;
+            border: 2px dashed #007bff;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        #loader.hidden {
+            display: none;
+        }
+        #mainContent.hidden {
+            display: none;
+        }
+        #appErrors {
+            background-color: #ffe0e0;
+            border: 1px solid red;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            display: none; /* Hidden by default */
+            color: red;
+            font-weight: bold;
+        }
+        #appErrors ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+        #appErrors li {
+            margin-bottom: 5px;
+        }
+
+        /* Global Progress Bar */
+        #globalProgressBarContainer {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px dashed #ccc;
+        }
+        #globalProgressBar {
+            width: 100%;
+            height: 20px;
+        }
+        #globalProgressText {
+            text-align: center;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PDF Password Cracker</h1>
+        <p style="text-align: center; font-style: italic; color: red;">
+            Warning: This version runs in a single thread. The browser might become unresponsive during cracking.
+            <br>Progress estimates can be inaccurate for very long passwords.
+        </p>
+
+        <div id="appErrors">
+            <h3>Critical Errors:</h3>
+            <ul id="errorList"></ul>
+            <button onclick="location.reload()">Reload Page</button>
+        </div>
+
+        <div id="loader">
+            <p>Loading necessary tools and libraries... Please wait.</p>
+            <p>Ensure you have an internet connection.</p>
+            <div id="loaderStatus" style="font-size: 0.9em; margin-top: 10px;"></div>
+        </div>
+
+        <div id="mainContent" class="hidden">
+            <div id="sessionOptions" style="margin-bottom: 15px; display: none;">
+                <p>Saved session found! Do you want to continue?</p>
+                <button id="continueSessionButton">Continue Session</button>
+                <button id="newSessionButton">Start New Session</button>
+            </div>
+
+            <div class="controls">
+                <label for="pdfFile">Select PDF File:</label>
+                <input type="file" id="pdfFile" accept=".pdf">
+
+                <label for="minLength">Min Password Length:</label>
+                <input type="number" id="minLength" value="1" min="1">
+
+                <label for="maxLength">Max Password Length:</label>
+                <input type="number" id="maxLength" value="5" min="1">
+
+                <fieldset>
+                    <legend>Character Types:</legend>
+                    <input type="checkbox" id="numbers" checked>
+                    <label for="numbers">Numbers (0-9)</label><br>
+                    <input type="checkbox" id="lowercase">
+                    <label for="lowercase">Lowercase (a-z)</label><br>
+                    <input type="checkbox" id="uppercase">
+                    <label for="uppercase">Uppercase (A-Z)</label><br>
+                    <input type="checkbox" id="symbols">
+                    <label for="symbols">Symbols (!@#$)</label>
+                </fieldset>
+
+                <label for="bruteForceType">Brute Force Type:</label>
+                <select id="bruteForceType">
+                    <option value="sequential">Sequential</option>
+                    <option value="random">Random</option>
+                </select>
+
+                <br><br>
+
+                <button id="startButton" disabled>Start Cracking</button>
+                <button id="stopButton" disabled>Stop</button>
+            </div>
+
+            <div class="results">
+                <h2>Results:</h2>
+                <p>Current Password: <span id="currentPassword"></span></p>
+                <p>Total Attempts: <span id="attempts">0</span></p>
+                <p>Time Elapsed: <span id="elapsedTime">0s</span></p>
+                <p>Attempts/Second: <span id="attemptsPerSecond">0</span></p>
+                <h3>Found Password: <span id="foundPassword" style="color: red;">Not Found Yet</span></h3>
+                <pre id="logDetails"></pre>
+            </div>
+
+            <div id="globalProgressBarContainer">
+                <h3>Overall Progress:</h3>
+                <progress id="globalProgressBar" value="0" max="100"></progress>
+                <div id="globalProgressText">0.00% | Est. Time Left: N/A</div>
+            </div>
+
+            </div>
+    </div>
+
+    <script>
+        // --- Configuration for PDF.js CDN ---
+        // Changed CDN to unpkg.com for potentially better reliability
+        const pdfjsLibCDN = 'https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js';
+        const pdfjsWorkerCDN = 'https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.worker.min.js';
+
+        // --- DOM Elements ---
+        const pdfFileInput = document.getElementById('pdfFile');
+        const minLengthInput = document.getElementById('minLength');
+        const maxLengthInput = document.getElementById('maxLength');
+        const numbersCheckbox = document.getElementById('numbers');
+        const lowercaseCheckbox = document.getElementById('lowercase');
+        const uppercaseCheckbox = document.getElementById('uppercase');
+        const symbolsCheckbox = document.getElementById('symbols');
+        const bruteForceTypeSelect = document.getElementById('bruteForceType');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const currentPasswordSpan = document.getElementById('currentPassword');
+        const attemptsSpan = document.getElementById('attempts');
+        const elapsedTimeSpan = document.getElementById('elapsedTime');
+        const attemptsPerSecondSpan = document.getElementById('attemptsPerSecond');
+        const foundPasswordSpan = document.getElementById('foundPassword');
+        const logDetailsPre = document.getElementById('logDetails');
+        
+        const loader = document.getElementById('loader');
+        const loaderStatus = document.getElementById('loaderStatus');
+        const mainContent = document.getElementById('mainContent');
+        const appErrors = document.getElementById('appErrors'); 
+        const errorList = document.getElementById('errorList'); 
+
+        const sessionOptions = document.getElementById('sessionOptions'); // For checkpointing
+        const continueSessionButton = document.getElementById('continueSessionButton');
+        const newSessionButton = document.getElementById('newSessionButton');
+
+        const globalProgressBar = document.getElementById('globalProgressBar');
+        const globalProgressText = document.getElementById('globalProgressText');
+
+
+        // --- Global State Variables ---
+        let pdfFileBuffer = null;
+        let isCracking = false;
+        let totalAttempts = 0;
+        let startTime = 0;
+        let pdfjsLibLoaded = false;
+        let foundPasswordGlobal = null;
+        let simulationMode = false; 
+
+        // For single-threaded sequential generation
+        let currentPasswordArray = []; 
+        let crackIntervalId = null; // Renamed to avoid conflict with worker 'intervalId'
+
+        let totalPermutationsForCurrentRange = 0; // For global progress estimate
+        const CHECKPOINT_INTERVAL = 100; // Save progress every X attempts (reduced for debugging)
+
+        // --- Utility Functions ---
+
+        function updateUI() {
+            attemptsSpan.textContent = totalAttempts;
+            const elapsedTime = (Date.now() - startTime) / 1000;
+            elapsedTimeSpan.textContent = `${elapsedTime.toFixed(2)}s`;
+            if (elapsedTime > 0) {
+                attemptsPerSecondSpan.textContent = (totalAttempts / elapsedTime).toFixed(0);
+            }
+
+            // Update Global Progress Bar (Single Thread)
+            if (bruteForceTypeSelect.value === 'sequential' && totalPermutationsForCurrentRange > 0 && isFinite(totalPermutationsForCurrentRange)) {
+                let currentPermutationIndex = calculateCurrentPermutationIndex(currentPasswordArray, getCharacterSet(), parseInt(minLengthInput.value));
+                let progressPercentage = (currentPermutationIndex / totalPermutationsForCurrentRange) * 100;
+                
+                if (isNaN(progressPercentage) || progressPercentage < 0) progressPercentage = 0;
+                if (progressPercentage > 100) progressPercentage = 100; // Clamp percentage
+
+                globalProgressBar.value = progressPercentage;
+                
+                let estTimeLeft = 'N/A';
+                if (totalAttempts > 0 && elapsedTime > 0) {
+                    let attemptsPerSecond = totalAttempts / elapsedTime;
+                    let remainingPermutations = totalPermutationsForCurrentRange - currentPermutationIndex;
+                    if (attemptsPerSecond > 0 && remainingPermutations > 0 && isFinite(remainingPermutations)) {
+                        let calculatedTime = remainingPermutations / attemptsPerSecond;
+                        if (isFinite(calculatedTime) && calculatedTime >= 0) {
+                            estTimeLeft = formatTime(calculatedTime);
+                        }
+                    }
+                }
+                globalProgressText.textContent = `${progressPercentage.toFixed(2)}% | Est. Time Left: ${estTimeLeft}`;
+            } else {
+                globalProgressBar.value = 0;
+                globalProgressText.textContent = `Progress: N/A (Cannot estimate for random or very large ranges)`;
+            }
+        }
+        
+        // Helper to format time (seconds) into H:M:S or similar
+        function formatTime(seconds) {
+            if (seconds === Infinity) return "Infinity";
+            if (seconds < 60) return `${Math.round(seconds)}s`;
+            let minutes = Math.floor(seconds / 60);
+            let remainingSeconds = Math.round(seconds % 60);
+            if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+            let hours = Math.floor(minutes / 60);
+            let remainingMinutes = minutes % 60;
+            return `${hours}h ${remainingMinutes}m ${remainingSeconds}s`;
+        }
+
+        // Calculates the index of a given password within the *global* permutation space
+        // This is crucial for the global progress bar
+        function calculateCurrentPermutationIndex(passwordArr, charset, minLen) {
+            const charsetLength = charset.length;
+            if (!passwordArr || passwordArr.length === 0) return 0; // If no password yet, index is 0
+
+            let index = 0;
+            let currentPasswordStr = passwordArr.join('');
+            let currentLength = currentPasswordStr.length;
+
+            // Add permutations from shorter lengths (only up to currentLength-1)
+            for (let len = 1; len < currentLength; len++) {
+                index += Math.pow(charsetLength, len);
+            }
+
+            // Add permutations within the current length
+            let positionMultiplier = 1;
+            for (let i = currentLength - 1; i >= 0; i--) {
+                let char = passwordArr[i];
+                let charIndex = charset.indexOf(char);
+                if (charIndex === -1) return 0; // Should not happen with valid charsets
+                index += charIndex * positionMultiplier;
+                positionMultiplier *= charsetLength;
+            }
+            return index;
+        }
+
+
+        function logDetails(message, type = 'info') {
+            const span = document.createElement('span');
+            span.textContent = message;
+            if (type === 'error') {
+                span.classList.add('log-error');
+            } else if (type === 'warn') {
+                span.classList.add('log-warn');
+            } else {
+                span.classList.add('log-info');
+            }
+            logDetailsPre.appendChild(span);
+            logDetailsPre.appendChild(document.createElement('br')); 
+            logDetailsPre.scrollTop = logDetailsPre.scrollHeight;
+        }
+
+        function addCriticalError(message) {
+            const li = document.createElement('li');
+            li.textContent = message;
+            errorList.appendChild(li);
+            appErrors.style.display = 'block'; 
+            console.error("Critical Error:", message);
+        }
+
+        function getCharacterSet() {
+            let charset = '';
+            if (numbersCheckbox.checked) charset += '0123456789';
+            if (lowercaseCheckbox.checked) charset += 'abcdefghijklmnopqrstuvwxyz';
+            if (uppercaseCheckbox.checked) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            if (symbolsCheckbox.checked) charset += '!@#$%^&*()_+{}[]|:;"<>,.?/~`';
+            return charset;
+        }
+
+        // --- Checkpointing Functions (Simplified for single thread) ---
+        const SESSION_KEY = 'pdfCrackerSessionSingle'; // Different key for single-threaded version
+
+        function saveSession() {
+            logDetails("Attempting to save session...", 'info');
+            if (!isCracking && !foundPasswordGlobal) {
+                logDetails("Save aborted: Not cracking and no password found.", 'info');
+                return; 
+            }
+            // Check localStorage availability (e.g., in private mode, it might not be available)
+            try {
+                const sessionData = {
+                    characterSet: getCharacterSet(),
+                    minLength: parseInt(minLengthInput.value),
+                    maxLength: parseInt(maxLengthInput.value),
+                    bruteForceType: bruteForceTypeSelect.value,
+                    totalAttempts: totalAttempts,
+                    foundPassword: foundPasswordGlobal,
+                    currentPasswordArray: currentPasswordArray.join(''), // Save current state for sequential
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData));
+                logDetails("Session saved successfully to local storage.", 'info');
+            } catch (e) {
+                logDetails(`Error saving session: ${e.message}. localStorage might be full or unavailable (e.g., private Browse mode).`, 'error');
+            }
+        }
+
+        function loadSession() {
+            logDetails("Attempting to load session...", 'info');
+            const savedData = localStorage.getItem(SESSION_KEY);
+            if (savedData) {
+                try {
+                    const sessionData = JSON.parse(savedData);
+                    // Verify saved data integrity (basic check)
+                    if (!sessionData || !sessionData.totalAttempts) {
+                        throw new Error("Invalid or incomplete session data.");
+                    }
+
+                    minLengthInput.value = sessionData.minLength;
+                    maxLengthInput.value = sessionData.maxLength;
+                    bruteForceTypeSelect.value = sessionData.bruteForceType;
+
+                    totalAttempts = sessionData.totalAttempts || 0;
+                    foundPasswordGlobal = sessionData.foundPassword;
+                    foundPasswordSpan.textContent = foundPasswordGlobal || 'Not Found Yet';
+                    if (foundPasswordGlobal) foundPasswordSpan.style.color = 'green';
+                    
+                    if (sessionData.bruteForceType === 'sequential' && sessionData.currentPasswordArray) {
+                         currentPasswordArray = sessionData.currentPasswordArray.split('');
+                         currentPasswordSpan.textContent = sessionData.currentPasswordArray; // Display saved password
+                    } else {
+                         // If not sequential or no current password array, ensure it's empty for a fresh start
+                         currentPasswordArray = [];
+                    }
+
+                    logDetails("Loaded session data from local storage successfully.", 'info');
+                    logDetails(`Last session settings: Length ${sessionData.minLength}-${sessionData.maxLength}, Type: ${sessionData.bruteForceType}`, 'info');
+                    
+                    sessionOptions.style.display = 'block';
+                    startButton.disabled = true; 
+                    
+                    return true;
+                } catch (e) {
+                    console.error("Failed to parse saved session:", e);
+                    localStorage.removeItem(SESSION_KEY); 
+                    logDetails(`Corrupted session data cleared: ${e.message}.`, 'error');
+                    return false;
+                }
+            }
+            logDetails("No saved session found.", 'info');
+            return false;
+        }
+
+        function clearSession() {
+            localStorage.removeItem(SESSION_KEY);
+            logDetails("Session data cleared.", 'info');
+            sessionOptions.style.display = 'none'; 
+            startButton.disabled = false; 
+            totalAttempts = 0;
+            currentPasswordArray = []; // Clear for new start
+            updateUI();
+        }
+
+        // --- Core Cracking Logic (Main Thread - All in one) ---
+
+        // Function to try opening PDF with a password (uses pdf.js if loaded, else simulates)
+        async function tryPassword(password) {
+            if (!pdfFileBuffer || !window['pdfjs-dist/build/pdf']) {
+                console.warn("PDF file not loaded or pdf.js not available. Simulating password check.");
+                return password === "12345"; // Test password for simulation
+            }
+
+            try {
+                // Attempt to open PDF with password
+                const doc = await window['pdfjs-dist/build/pdf'].getDocument({
+                    data: new Uint8Array(pdfFileBuffer),
+                    password: password
+                }).promise;
+                doc.destroy(); // تنظيف الموارد
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+        
+        // Function to get the next sequential password (single-threaded logic)
+        function getNextSequentialPassword(passwordArr, charset, minLen, maxLen) {
+            // passwordArr is currentPasswordArray (passed by reference)
+            if (passwordArr.length === 0) {
+                // Start with the smallest possible password of minLength
+                for (let i = 0; i < minLen; i++) {
+                    passwordArr.push(charset[0]);
+                }
+                return passwordArr.join('');
+            }
+
+            let i = passwordArr.length - 1;
+            while (i >= 0) {
+                let charIndex = charset.indexOf(passwordArr[i]);
+                if (charIndex < charset.length - 1) {
+                    passwordArr[i] = charset[charIndex + 1];
+                    return passwordArr.join('');
+                } else {
+                    passwordArr[i] = charset[0];
+                    i--;
+                }
+            }
+
+            // If we've exhausted all combinations for the current length, increase length
+            if (passwordArr.length < maxLen) {
+                passwordArr.length++; // Add a character
+                for (let j = 0; j < passwordArr.length; j++) {
+                    passwordArr[j] = charset[0]; // Reset to first char
+                }
+                return passwordArr.join('');
+            }
+            return null; // All combinations exhausted
+        }
+
+
+        // Main cracking loop (single-threaded)
+        async function crackLoop() {
+            if (!isCracking) return;
+
+            let passwordToTry = '';
+            const minLength = parseInt(minLengthInput.value);
+            const maxLength = parseInt(maxLengthInput.value);
+            const bruteForceType = bruteForceTypeSelect.value;
+            const charset = getCharacterSet();
+
+            if (bruteForceType === 'sequential') {
+                passwordToTry = getNextSequentialPassword(currentPasswordArray, charset, minLength, maxLength);
+                if (passwordToTry === null) {
+                    logDetails("All combinations exhausted within the specified length range.");
+                    stopCracking();
+                    return;
+                }
+            } else { // Random
+                const currentLength = Math.floor(Math.random() * (maxLength - minLength + 1)) + minLength;
+                passwordToTry = generateRandomPassword(currentLength, charset);
+            }
+
+            totalAttempts++; // Increment global attempts
+            currentPasswordSpan.textContent = passwordToTry;
+            updateUI(); // Update UI after each attempt
+
+            const isCorrect = await tryPassword(passwordToTry);
+            if (isCorrect) {
+                foundPasswordGlobal = passwordToTry; // Set global flag
+                foundPasswordSpan.textContent = passwordToTry;
+                foundPasswordSpan.style.color = 'green';
+                logDetails(`🎉 Password found: "${passwordToTry}" after ${totalAttempts} attempts.`);
+                stopCracking();
+                return;
+            }
+
+            // Schedule next iteration. Using setTimeout allows UI to update (though it might still freeze for complex ops).
+            crackIntervalId = setTimeout(crackLoop, 0); 
+
+            // Save session periodically (e.g., every 100 attempts for debugging)
+            if (totalAttempts % CHECKPOINT_INTERVAL === 0) {
+                saveSession();
+            }
+        }
+
+        // Function to start the cracking process
+        async function startCracking(continueSession = false) {
+            // Clear previous critical errors
+            errorList.innerHTML = '';
+            appErrors.style.display = 'none';
+            sessionOptions.style.display = 'none'; // Hide session options once started
+
+            if (!pdfjsLibLoaded && !simulationMode) { 
+                addCriticalError("PDF.js library is not loaded. Cannot start cracking. Please check internet connection and reload.");
+                return;
+            }
+
+            const file = pdfFileInput.files[0];
+            if (!file) {
+                alert("Please select a PDF file first.");
+                return;
+            }
+
+            const characterSet = getCharacterSet();
+            if (characterSet.length === 0) {
+                alert("Please select at least one character type.");
+                return;
+            }
+
+            const minLength = parseInt(minLengthInput.value);
+            const maxLength = parseInt(maxLengthInput.value);
+            if (isNaN(minLength) || isNaN(maxLength) || minLength > maxLength || minLength <= 0 || maxLength <= 0) {
+                addCriticalError("Invalid password length. Please enter positive numbers where Min <= Max.");
+                return;
+            }
+
+            // Calculate total permutations for progress estimate (only if sequential)
+            if (bruteForceTypeSelect.value === 'sequential') {
+                const charsetLength = characterSet.length;
+                totalPermutationsForCurrentRange = 0;
+                for (let len = minLength; len <= maxLength; len++) {
+                    // Check for potential overflow or very large numbers (Infinity)
+                    let permutationsAtLength = Math.pow(charsetLength, len);
+                    if (!isFinite(permutationsAtLength)) {
+                        totalPermutationsForCurrentRange = Infinity; // Set to Infinity if too large to estimate
+                        logDetails("Warning: Total permutations is too large for accurate progress estimation. Progress bar might not be meaningful.", 'warn');
+                        break;
+                    }
+                    totalPermutationsForCurrentRange += permutationsAtLength;
+                }
+            } else {
+                totalPermutationsForCurrentRange = 0; // Not applicable for random
+            }
+
+
+            // Reset UI and state for a NEW session if not continuing
+            if (!continueSession) {
+                logDetailsPre.innerHTML = ''; // Clear all logs
+                foundPasswordSpan.textContent = 'Not Found Yet';
+                foundPasswordSpan.style.color = 'red';
+                totalAttempts = 0;
+                currentPasswordArray = []; // Ensure fresh start for sequential
+            } else {
+                // If continuing, currentPasswordArray should be loaded by loadSession
+                // totalAttempts should also be loaded
+                foundPasswordSpan.textContent = foundPasswordGlobal || 'Not Found Yet';
+                if (foundPasswordGlobal) foundPasswordSpan.style.color = 'green';
+            }
+
+            startTime = Date.now();
+            isCracking = true;
+            foundPasswordGlobal = null; 
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            currentPasswordSpan.textContent = '';
+            globalProgressBar.value = 0;
+            globalProgressText.textContent = `0.00% | Est. Time Left: N/A`; // Reset progress bar text
+
+            try {
+                logDetails("Loading PDF file into memory...");
+                await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        pdfFileBuffer = e.target.result;
+                        logDetails("PDF file loaded into memory. Size: " + (e.total / 1024).toFixed(2) + " KB");
+                        resolve();
+                    };
+                    reader.onerror = (e) => {
+                        console.error("Error reading PDF file:", e);
+                        reject("Failed to read PDF file.");
+                    };
+                    reader.readAsArrayBuffer(file);
+                });
+            } catch (error) {
+                addCriticalError(`Error loading PDF file: ${error.message || error}. Please ensure it's a valid PDF and try again.`);
+                stopCracking(); 
+                return;
+            }
+
+            logDetails(`Starting brute force (${bruteForceTypeSelect.value}).`);
+            logDetails(`Character Set: ${characterSet}`);
+            logDetails(`Length: ${minLength} to ${maxLength}`);
+            if (simulationMode) {
+                logDetails("Warning: PDF.js failed to load. Cracking will be simulated. Test password is '12345'.", 'warn');
+            }
+            if (continueSession) {
+                logDetails("Continuing from previous session...", 'info');
+                // Ensure current password display is updated if continuing sequential
+                if (bruteForceTypeSelect.value === 'sequential' && currentPasswordArray.length > 0) {
+                    currentPasswordSpan.textContent = currentPasswordArray.join('');
+                }
+            }
+            
+            crackLoop(); // Start the main cracking loop
+        }
+
+        // Function to stop the cracking process
+        function stopCracking() {
+            isCracking = false;
+            startButton.disabled = false;
+            stopButton.disabled = true;
+            clearTimeout(crackIntervalId); // Clear the main cracking loop timeout
+            logDetails("Cracking process stopped.");
+            updateUI();
+            saveSession(); // Save final state when stopped
+        }
+
+        // --- Library Loading Logic ---
+
+        // Function to load a script dynamically and return a Promise
+        function loadScript(src, timeout = 10000) { 
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = () => {
+                    clearTimeout(timeoutId); 
+                    resolve();
+                };
+                script.onerror = (e) => {
+                    clearTimeout(timeoutId); 
+                    let errorMessage = `Failed to load script: ${src}. `;
+                    if (e && e.message) {
+                        errorMessage += `Error: ${e.message}. `;
+                    } else if (e && e.type === 'error') {
+                        errorMessage += `A network error occurred. `;
+                    }
+                    errorMessage += `(Check internet connection or CDN availability).`;
+                    reject(new Error(errorMessage));
+                };
+                
+                const timeoutId = setTimeout(() => {
+                    if (script.parentNode) { 
+                        script.parentNode.removeChild(script); 
+                    }
+                    reject(new Error(`Loading script timed out: ${src}. (Slow connection or resource unavailable)`));
+                }, timeout);
+
+                document.head.appendChild(script);
+            });
+        }
+
+        async function loadAllLibraries() {
+            loaderStatus.textContent = "Loading PDF.js (main script)...";
+            try {
+                await loadScript(pdfjsLibCDN);
+                logDetails("PDF.js main script loaded. Verifying object...", 'info');
+
+                if (!window['pdfjs-dist/build/pdf']) {
+                    throw new Error("PDF.js main object 'pdfjs-dist/build/pdf' not found after script load. Library might be corrupted or path incorrect.");
+                }
+                logDetails("PDF.js main object verified. Initializing complete.", 'info');
+                
+                pdfjsLibLoaded = true;
+                
+                // Short delay before showing main content
+                setTimeout(() => {
+                    loader.classList.add('hidden');
+                    mainContent.classList.remove('hidden');
+                    // Check for saved session after main content is visible
+                    if (loadSession()) {
+                        sessionOptions.style.display = 'block';
+                        startButton.disabled = true; 
+                    } else {
+                        startButton.disabled = false; 
+                    }
+                }, 500); 
+                
+            } catch (error) {
+                console.error("Critical error loading libraries:", error);
+                addCriticalError(`Failed to load essential tools: ${error.message}. Please check your internet connection and reload the page.`);
+                loaderStatus.innerHTML = `<span class="log-error">Error loading tools: ${error.message}. <br>The cracker will run in simulation mode.</span>`;
+                simulationMode = true; 
+                startButton.disabled = false; 
+                setTimeout(() => {
+                    loader.classList.add('hidden');
+                    mainContent.classList.remove('hidden');
+                }, 500);
+            }
+        }
+
+        // --- Event Listeners ---
+        document.addEventListener('DOMContentLoaded', loadAllLibraries);
+        startButton.addEventListener('click', () => startCracking(false)); 
+        continueSessionButton.addEventListener('click', () => startCracking(true)); 
+        newSessionButton.addEventListener('click', clearSession); 
+        stopButton.addEventListener('click', stopCracking);
+    </script>
+</body>
+</html>
